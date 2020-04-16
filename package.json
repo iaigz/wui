@@ -1,0 +1,29 @@
+{
+  "name": "@iaigz/wui",
+  "version": "1.0.0",
+  "description": "",
+  "main": "wui.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iaigz/wui.git"
+  },
+  "keywords": [
+    "iai",
+    "ui",
+    "web",
+    "user",
+    "interface"
+  ],
+  "author": "Lorenzo García Rivera",
+  "license": "CC-BY-SA-4.0",
+  "bugs": {
+    "url": "https://github.com/iaigz/wui/issues"
+  },
+  "homepage": "https://github.com/iaigz/wui#readme",
+  "dependencies": {
+    "jquery": "^3.4.1"
+  }
+}

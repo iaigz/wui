@@ -1,0 +1,91 @@
+/*
+ * Layout disposition
+ * TODO: grid may fit better
+ */
+.NotifyView {
+  z-index: 99999999;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  max-width: 100%;
+  display: flex;
+  flex-flow: row wrap;
+}
+.NotifyView p.message {
+  flex: 1 0;
+  width: min-content;
+  display: flex;
+  flex-flow: row wrap;
+  align-items: center;
+  margin: .4rem;
+  padding: .5em 2.5em;
+  border-radius: .2em;
+  text-align: center;
+  font-family: monospace;
+  position: relative;
+}
+.NotifyView p.message:last-of-type {
+}
+.NotifyView p.message::before,
+.NotifyView p.message::after {
+  text-align: center;
+  position: absolute;
+  width: 1.5rem;
+  line-height: 1.5rem;
+  margin: auto 0;
+}
+.NotifyView p.message::before {
+  content: 'i';
+  left: .6rem;
+  border-radius: 1.5rem;
+  font-size: .9em;
+}
+.NotifyView p.message.error::before,
+.NotifyView p.message.warn::before { content: '!'; }
+.NotifyView p.message::after {
+  content: 'X';
+  right: .3rem;
+}
+.NotifyView p.message:hover { cursor: pointer; }
+/*
+ * Color theme
+ */
+:root {
+  --dark-erro: #d70022;
+  --light-erro: #fdf2f5;
+  --dark-warn: #be9b00;
+  --light-warn: #fffbd6;
+  --dark-info: #0087af;
+  --light-info: #dfdffd;
+/* old blue saturado #4db4f6;*/
+
+  --disapear-duration: 1s;
+}
+.NotifyView p.message {
+  background: var(--light-info);
+  box-shadow: 0 0 .15em 0 var(--dark-fg);
+}
+.NotifyView p.message::before {
+  color: var(--light-fg);
+  background: var(--dark-info);
+}
+.NotifyView p.message::after { color: var(--light-fg); }
+.NotifyView p.message:hover::after { color: var(--dark-fg); }
+.NotifyView p.message.error { background: var(--light-erro); }
+.NotifyView p.message.error::before { background: var(--dark-erro); }
+.NotifyView p.message.warn { background: var(--light-warn); }
+.NotifyView p.message.warn::before { background: var(--dark-warn); }
+/*
+ * Effects
+ */
+@keyframes fx-disapear {
+  from { transform: scale(1); color: currentColor; }
+  to { transform: scale(0); color: transparent; }
+}
+.NotifyView p.fx-disapear {
+  animation: fx-disapear var(--disapear-duration) ease 0s 1 normal both;
+}
+.NotifyView p.message.fx-disapear::after { color: transparent; }
+/* vim: set expandtab: */
+/* vim: set filetype=css ts=2 shiftwidth=2: */
