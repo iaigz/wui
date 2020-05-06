@@ -76,11 +76,48 @@ ui.bootstrap = (document) => {
           window.onbeforeunload = (event) => {
             console.warn('will unload window', event)
           }
-          return ui
+          window.onsubmit = (event) => {
+            event.preventDefault()
+            ui.submit(event.target)
+    
+          }
         })
         .then(resolve).catch(reject)
     })
   })
+}
+
+ui.submit = (form) => {
+  console.log('submit', form)
+  let data = {}
+  for (let element of form.elements) {
+    element.setAttribute('disabled', '')
+    let field = element.name || element.id
+    if (!field) continue
+    data[field] = element.value
+  }
+  let request = new Request(form.action, {
+    method: form.method,
+    mode: 'same-origin',
+    credentials: 'same-origin',
+    headers: new Headers({
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    }),
+    body: JSON.stringify(data)
+  })
+  fetch(request)
+    // TODO if status != 200
+    .then(response => response.json())
+    .then(data => {
+      if (data.error) {
+        console.error('submit error:', data.error)
+        ui.notify.error(data.error.message)
+      } else {
+        console.log('received', data)
+        alert('working on')
+      }
+    })
 }
 
 ui.query = $
@@ -274,31 +311,45 @@ ui.display = (location) => {
     method: 'get',
     mode: 'same-origin',
     credentials: 'same-origin',
-    headers: new Headers({
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    })
+    headers: new Headers({ 'Accept': 'application/json' })
   })
-  return fetch(request).then(response => {
-    console.log('awaiting response for', location)
-    console.log(response)
-    return response.json()
-  }).then(data => {
-    console.log('data is', data)
-    return data
-  }).catch(error => {
-    if (error instanceof Error) {
-      console.error(error)
-      if (error instanceof SyntaxError) {
-        ui.notify.error('Response produces SyntaxError')
-      } else {
-        ui.notify.error(`Response produces ${error.constructor.name}`)
+  return fetch(request)
+    /*.then(response => {
+      console.log('awaiting response for', location)
+      return response
+    })*/
+    // TODO if status != 200
+    .then(response => response.json())
+    .then(section => {
+      if (ui.$doc.getElementById(section.id) === null) {
+        // provide a a container for sections, if there isn't
+        if (! document.querySelector('main')) {
+          console.info('will inject main container')
+          ui.main = document.createElement('main')
+          ui.body.appendChild(ui.main)
+        }
+        const $ = ui.$doc.createElement('section')
+        $.id = section.id
+        $.classList.add(_cssnav)
+        $.innerHTML = section.html
+        ui.deploy($, ui.main)
       }
-    } else {
-      console.error(error)
-      throw new Error('catched a promise rejection with non-error')
-    }
-  })
+      console.log('html is', section.html)
+      return section
+    })
+    .catch(error => {
+      if (error instanceof Error) {
+        console.error(error)
+        if (error instanceof SyntaxError) {
+          ui.notify.error('Response produces SyntaxError')
+        } else {
+          ui.notify.error(`Response produces ${error.constructor.name}`)
+        }
+      } else {
+        console.error(error)
+        throw new Error('catched a promise rejection with non-error')
+      }
+    })
 }
 /* vim: set expandtab: */
 /* vim: set filetype=javascript ts=2 shiftwidth=2: */
