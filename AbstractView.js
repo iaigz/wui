@@ -4,7 +4,7 @@ const assert = require('assert')
 exports = module.exports = View
 
 // Pseudo-abstract constructor to allow decoupling ui singleton from View
-function View (element, opts) {
+function View (element, opts = {}) {
   assert(this instanceof View, 'use the new keyword')
   assert(element instanceof HTMLElement, 'element must be HTMLElement')
 

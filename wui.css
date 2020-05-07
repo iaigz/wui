@@ -10,15 +10,14 @@ body { margin: 0; min-height: 100%; }
 body {
   display: flex;
   flex-flow: column wrap;
-
 }
 body > * {
   flex: 1 1 100%;
-  max-width: 600px;
 }
 body > main {
   max-width: 100%;
   display: flex;
+  flex-flow: column wrap;
   align-items: center;
 }
 body > main > section {
@@ -26,7 +25,7 @@ body > main > section {
   margin: var(--workarea-top) 6em var(--workarea-bottom) 1.5em;
 }
 body > main > section.loading::before {
-  content: 'loading'
+  content: 'loading';
 }
 body > main > section.loading,
 body > main > section.selected {
@@ -45,6 +44,9 @@ body > main > section h6 {
 }
 body > main > section p {
   text-align: justify;
+}
+img {
+  max-width: 100%;
 }
 /*
  * Loading overlay

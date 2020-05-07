@@ -34,14 +34,22 @@ ui.bootstrap = (document) => {
 
   return new Promise( (resolve, reject) => {
     document.addEventListener('DOMContentLoaded', () => {
+      let main = document.querySelector('main')
+      // provide a a container for sections, if there isn't
+      if (! document.querySelector('main')) {
+        console.warn('no main container, will inject one')
+        main = document.createElement('main')
+        document.body.appendChild(main)
+      }
       Object.defineProperties(ui, {
         '$doc': { value: document },
         'head': { value: document.head },
         'body': { value: document.body },
+        'main': { value: main },
         'links': { value: document.getElementsByTagName('a') },
         'sections': { value: document.getElementsByTagName('section') },
       })
-      console.info('interface initialized (DOMContentLoaded)')
+      console.debug('WUI initialized (DOMContentLoaded)')
       // TODO should remove this metas from here?
       if (! document.querySelector('meta[name=viewport')) {
         //console.info('will inject viewport meta tag')
@@ -51,7 +59,7 @@ ui.bootstrap = (document) => {
         ui.head.appendChild(meta)
         delete meta
       }
-      if (! document.querySelector('meta[rel=manifest')) {
+      if (! document.querySelector('meta[rel=manifest]')) {
         console.info('will inject webmanifest link')
         let link = document.createElement('link')
         link.rel = "manifest"
@@ -238,6 +246,20 @@ ui.load = (url, task) => {
     }
   })
 }
+// returns a DocumentFragment containing specified string templates as DOM nodes
+ui.template = function (...args) {
+  assert(ui.$doc instanceof HTMLDocument, 'ui is not initialized')
+  // let's create an off-DOM element to parse the HTML strings
+  let tmp = ui.$doc.createElement('div')
+  tmp.innerHTML = args.join('\n')
+  // now create an new document fragment
+  let fragment = tmp.ownerDocument.createDocumentFragment()
+  // and move each DOM node from tmp div to fragment
+  while (tmp.firstChild) {
+    fragment.appendChild(tmp.firstChild)
+  }
+  return fragment
+}
 
 ui.deploy = (thing, container = ui.body) => {
   try {
@@ -246,15 +268,23 @@ ui.deploy = (thing, container = ui.body) => {
   } catch (e) {
     return Promise.reject(e)
   }
-  if (thing instanceof HTMLElement) {
+  // string implies Text, not HTML
+  if ('string' === typeof thing) {
+    container.insertAdjacentText('beforeend', thing)
+    return Promise.resolve(ui)
+  }
+  // thing should be DocumentFragment to insert multiple DOM nodes
+  // HTMLElement is also honored
+  if (thing instanceof HTMLElement || thing instanceof DocumentFragment) {
     container.appendChild(thing)
     return Promise.resolve(ui)
   }
+  // AbstractView implemented at this package is also honored
   if (thing instanceof HtmlView) {
     return ui.deploy(thing.$, container).then(ui => thing.ready(ui))
   }
   return Promise.reject(
-    new TypeError(`thing must be either HTMLElement or HtmlView but is ${thing}`)
+    new TypeError(`can't deploy ${thing} as it has an invalid type`)
   )
 }
 
@@ -322,12 +352,6 @@ ui.display = (location) => {
     .then(response => response.json())
     .then(section => {
       if (ui.$doc.getElementById(section.id) === null) {
-        // provide a a container for sections, if there isn't
-        if (! document.querySelector('main')) {
-          console.info('will inject main container')
-          ui.main = document.createElement('main')
-          ui.body.appendChild(ui.main)
-        }
         const $ = ui.$doc.createElement('section')
         $.id = section.id
         $.classList.add(_cssnav)
