@@ -41,7 +41,7 @@ ui.bootstrap = (document) => {
       let main = document.querySelector('main')
       // provide a a container for sections, if there isn't
       if (!document.querySelector('main')) {
-        console.warn('no main container, will inject one')
+        console.warn('There is no main container, will inject one')
         main = document.createElement('main')
         document.body.appendChild(main)
       }
@@ -53,7 +53,7 @@ ui.bootstrap = (document) => {
         links: { value: document.getElementsByTagName('a') },
         sections: { value: document.getElementsByTagName('section') }
       })
-      console.debug('WUI initialized (DOMContentLoaded)')
+      console.info('WUI initialized (DOMContentLoaded)')
       // TODO should only warn here, no injection
       if (!document.querySelector('meta[name=viewport')) {
         console.warn('will inject viewport meta tag')
@@ -63,11 +63,7 @@ ui.bootstrap = (document) => {
         ui.head.appendChild(meta)
       }
       if (!document.querySelector('meta[rel=manifest]')) {
-        console.warn('will inject webmanifest link')
-        const link = document.createElement('link')
-        link.rel = 'manifest'
-        link.href = '/assets/webmanifest.json'
-        ui.head.appendChild(link)
+        console.warn('There is no webmanifest meta tag')
       }
       ui
         .assets([
@@ -80,25 +76,37 @@ ui.bootstrap = (document) => {
         .then(ui => ui.deploy(ui.notify))
         .then(() => {
           window.onunhandledrejection = (event) => {
-            console.warn(event.promise)
+            console.warn(event.promise, event.reason)
             ui.notify.error(`${event.reason} (Unhandled rejection)`)
           }
           window.onbeforeunload = (event) => {
-            console.warn('will unload window', event)
+            console.warn('will unload window')
+            console.debug(event)
           }
           window.onpopstate = (event) => {
-            ui.notify.info(`popstate location: ${document.location}`)
-            console.log('popstate', event.state)
+            if (event.state === null) return
             ui.show(event.state)
           }
           window.onsubmit = (event) => {
             event.preventDefault()
             ui.submit(event.target)
           }
+          console.info('window event handlers bound')
+          return ui
         })
         .then(resolve).catch(reject)
     })
   })
+}
+
+/* global EventTarget */
+
+ui.query = $
+ui.observe = (thing) => {
+  // TODO event interface
+  if (thing instanceof HtmlView) return $(thing.$)
+  if (thing instanceof EventTarget) return $(thing)
+  throw new TypeError('expecting instanceof HtmlView or EventTarget')
 }
 
 ui.fetch = (...args) => window.fetch(...args)
@@ -119,10 +127,11 @@ ui.request = (url, opts = {}) => {
 }
 
 ui.submit = (form) => {
-  console.log('submit', form)
+  console.info('Submit', form.id || form.action)
   const data = {}
   for (const element of form.elements) {
     element.setAttribute('disabled', '')
+    // TODO: mark disableds element.dataset.wui = 'disabled-for-submit'
     const field = element.name || element.id
     if (!field) continue
     data[field] = element.value
@@ -135,12 +144,13 @@ ui.submit = (form) => {
     // TODO if status != 200
     .then(response => response.json())
     .then(data => {
+      for (const element of form.elements) {
+        // TODO research disableds: console.log(element, element.dataset)
+        element.removeAttribute('disabled')
+      }
       if (data.error) {
         console.error('submit error:', data.error)
         ui.notify.error(data.error.message, form)
-        for (const element of form.elements) {
-          element.removeAttribute('disabled')
-        }
       } else {
         console.debug('after-submit, show section')
         return ui.show(data)
@@ -152,7 +162,7 @@ ui.submit = (form) => {
 const _cssnav = 'selected'
 
 ui.show = (section) => {
-  console.debug(`show ${section.path} (#${section.id})`)
+  console.info(`show ${section.path} (#${section.id})`)
   // FIRST: remove _cssnav class for any link or section within the page
   Array.from(ui.links).forEach(a => a.classList.remove(_cssnav))
   Array.from(ui.sections).forEach(section => section.classList.remove(_cssnav))
@@ -165,43 +175,67 @@ ui.show = (section) => {
     ui.deploy($, ui.main)
   }
 
-  window.history.pushState(section, '', section.path)
+  const links = Array.from(ui.links).filter(l => l.onclick === null)
+  links.forEach(link => { link.onclick = ui.navigate })
+  links.length && console.info('navigate bound for %s links', links.length)
+
+  window.history.pushState(section, '', section.data.url || section.path)
   $.classList.add(_cssnav)
   return section
 }
 
-/* global Location */
-
 ui.display = (location) => {
-  assert(location instanceof Location, 'expecting location object')
-  return ui.request(location)
+  // console.log('display', location)
+  return ui.load(location, (resolve, reject) => ui
+    .request(location)
     // TODO if status != 200
     .then(response => response.json())
-    .catch(error => {
-      if (error instanceof Error) {
-        console.error(error)
-        if (error instanceof SyntaxError) {
-          ui.notify.error('Response produces SyntaxError')
-        } else {
-          ui.notify.error(`Response produces ${error.constructor.name}`)
-        }
-      } else {
-        console.error(error)
-        throw new Error('catched a promise rejection with non-error')
-      }
-    })
     .then(section => ui.show(section))
+    .then(resolve)
+    .catch(error => {
+      if (!(error instanceof Error)) {
+        console.error(error)
+        return reject(new Error('catched a promise rejection with non-error'))
+      }
+      console.error(error)
+      if (error instanceof SyntaxError) {
+        ui.notify.error('Response produces SyntaxError')
+      } else {
+        ui.notify.error(`Response produces ${error.constructor.name}`)
+      }
+      reject(error)
+    })
+  )
 }
 
-/* global EventTarget */
+ui.navigate = (event) => {
+  const link = event.target
+  if (link.tagName !== 'A') {
+    console.error('target:', link)
+    throw new TypeError('ui.navigate expect an <A> Node as event target')
+  }
 
-ui.query = $
-ui.observe = (thing) => {
-  // TODO event interface
-  if (thing instanceof HtmlView) return $(thing.$)
-  if (thing instanceof EventTarget) return $(thing)
-  console.error(thing)
-  throw new TypeError('expecting instanceof HtmlView or EventTarget')
+  // no actions on links:
+  if (link.attributes.target) return // with target attribute set
+  if (link.attributes.href.value[0] === '#') return // with anchor href values
+  // TODO if link.href === ui.$doc.location => ABORT
+
+  // taking actions implies not allowing window to unload
+  event.preventDefault()
+
+  // link.href will return a complete location (inc. protocol, host, etc)
+  ui.display(link.attributes.href.value)
+    .then(() => {
+      [
+        // links with same href attribute value
+        ui.$doc.querySelectorAll(`a[href="${link.attributes.href.value}"]`),
+        // links pointing to the full location
+        ui.$doc.querySelectorAll(`a[href="${link.href}"]`)
+      ]
+        .reduce((a, b) => a.concat(Array.from(b)), [])
+        .forEach(a => a.classList.add(_cssnav))
+    })
+    .catch(err => console.error(err))
 }
 
 ui.get = (...args) => new Promise((resolve, reject) => {
@@ -279,7 +313,13 @@ ui.assets = (url) => {
 }
 
 Object.defineProperty(ui, '_loaded', { value: {} })
+ui.isLoading = () => Object.values(ui._loaded).some(value => value !== true)
+ui.hasLoaded = (url) => ui._loaded[url] === true
 ui.load = (url, task) => {
+  if (ui.hasLoaded(url)) {
+    console.debug('already loaded %s (will reload anyway)', url)
+    delete ui._loaded[url]
+  }
   try {
     assert(ui.$doc instanceof HTMLDocument, 'ui is not initialized')
     if (typeof ui._loaded[url] !== 'undefined') {
@@ -296,13 +336,17 @@ ui.load = (url, task) => {
       $(ui.body).addClass('loading')
       task(() => {
         ui._loaded[url] = true
-        console.debug(`resource ${url} loaded`)
-        $(ui.body).removeClass('loading')
+        const still = ui.isLoading() ? 'still' : 'done'
+        console.debug(`resource ${url} loaded (${still} loading resources)`)
+        !ui.isLoading() && ui.body.classList.remove('loading')
         resolve(ui)
       }, (error) => {
-        ui._loaded[url] = error
+        const e = new Error(`resource ${url} failed to load`)
+        e.code = 'EWUI_LOAD_FAILURE'
+        e.real = error
+        ui._loaded[url] = e
         $(ui.body).removeClass('loading')
-        reject(new Error(`resource ${url} failed to load`))
+        reject(e)
       })
     } catch (e) {
       reject(e)
@@ -352,49 +396,6 @@ ui.deploy = (thing, container = ui.body) => {
   return Promise.reject(
     new TypeError(`can't deploy ${thing} as it has an invalid type`)
   )
-}
-
-ui.navigate = (link) => {
-  try {
-    assert.strictEqual(link.tagName, 'A', 'ui.navigate expect an <A> Node')
-  } catch (error) {
-    console.error(link)
-    throw error
-  }
-  // TODO if link.href === ui.$doc.location => ABORT
-
-  // TODO link.attributes.target.value === _blank?
-
-  // FIRST: remove _cssnav class for any link or section within the page
-  Array.from(ui.links).forEach(a => a.classList.remove(_cssnav))
-  Array.from(ui.sections).forEach(section => section.classList.remove(_cssnav))
-
-  // link.href will return a complete location (inc. protocol, host, etc)
-  const href = link.attributes.href.value
-  // retrieve first links with same href attribute value
-  const same = ui.$doc.querySelectorAll(`a[href="${href}"]`)
-  // and retrieve also links pointing to the full location
-  const also = ui.$doc.querySelectorAll(`a[href="${link.href}"]`)
-  // now iterate and setup the _cssnav class
-  Array.from(same).concat(Array.from(also)).forEach(a => a.classList.add(_cssnav))
-
-  // now display the section
-  const section = ui.Section.find({ href: href })
-  if (section === null) {
-    // TODO no section may mean "open this in browser"
-    throw new Error(`there is no ui.Section with href=${href}`)
-  }
-  const sectionId = section.$.id
-  if (ui.$doc.getElementById(sectionId) === null) {
-    // provide a a container for sections, if there isn't
-    if (!document.querySelector('main')) {
-      console.info('will inject main container')
-      ui.main = document.createElement('main')
-      ui.body.appendChild(ui.main)
-    }
-    ui.deploy(section, ui.main)
-  }
-  section.addClass(_cssnav)
 }
 
 /* vim: set expandtab: */
