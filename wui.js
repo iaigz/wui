@@ -75,10 +75,7 @@ ui.bootstrap = (document) => {
         )
         .then(ui => ui.deploy(ui.notify))
         .then(() => {
-          window.onunhandledrejection = (event) => {
-            console.warn(event.promise, event.reason)
-            ui.notify.error(`${event.reason} (Unhandled rejection)`)
-          }
+          window.onunhandledrejection = (event) => ui.fail(event.reason)
           window.onbeforeunload = (event) => {
             console.warn('will unload window')
             console.debug(event)
@@ -109,25 +106,60 @@ ui.observe = (thing) => {
   throw new TypeError('expecting instanceof HtmlView or EventTarget')
 }
 
+ui.fail = (error) => {
+  switch (error.code) {
+    case 'EWUI_LOAD_FAILURE':
+      ui.notify.warn(`${error.message} (caused by ${error.real.code})`)
+      ui.fail(error.real)
+      console.warn(error)
+      break
+    case 'EWUI_HTTP_FAILURE':
+      ui.notify[ui.level(error.statusCode)](error.message)
+      console.log(error)
+      break
+    default:
+      ui.notify.error(`Unhandled rejection: ${error.message} (${error.code})`)
+      console.error(error)
+      break
+  }
+}
+
 ui.fetch = (...args) => window.fetch(...args)
 
-/* global Request, Headers */
+// determine log severity for Http status code "$c"
+ui.level = c => c > 499 ? 'error' : c > 399 ? 'warn' : c > 299 ? 'info' : 'log'
 
+/* global Request, Headers */
 ui.request = (url, opts = {}) => {
   // see https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch
-  opts = {
-    mode: 'same-origin',
-    credentials: 'same-origin',
-    ...opts
-  }
+  opts = { mode: 'same-origin', credentials: 'same-origin', ...opts }
   return ui.fetch(new Request(url, {
     ...opts,
     headers: new Headers({ Accept: 'application/json', ...opts.headers })
-  }))
+  })).then(res => res.ok ? res : ui.HttpError(res))
+}
+
+ui.HttpError = (res, data) => {
+  const motto = res.status >= 500 ? 'Server Failure' : 'Request Failure'
+  const error = new Error(`HTTP ${res.status} ${motto}: ${res.statusText}`)
+  error.code = 'EWUI_HTTP_FAILURE'
+  error.origin = res.url
+  error.redirected = res.redirected
+  error.statusCode = res.status
+  error.statusText = res.statusText
+  throw error
+  // TODO recycle response data
+  // const type = res.headers.get('Content-Type')
+  // return res[type === 'application/json' ? 'json' : 'text']()
+  //  .then(data => {
 }
 
 ui.submit = (form) => {
-  console.info('Submit', form.id || form.action)
+  const method = form.dataset.method || form.method
+  console.info('Submit %s (%s)', form.id || form.action, method)
+
+  if (method === 'GET') return ui.fail(new Error('Cant send a GET form'))
+
   const data = {}
   for (const element of form.elements) {
     element.setAttribute('disabled', '')
@@ -136,37 +168,46 @@ ui.submit = (form) => {
     if (!field) continue
     data[field] = element.value
   }
-  ui.load(`${form.method} ${form.action}`, (resolve, reject) => {
-    ui.request(form.action, {
-      method: form.method,
+
+  return ui.load(`${method}+${form.action}`, (resolve, reject) => ui
+    .request(form.action, {
+      method: method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     })
-      // TODO if status != 200
-      .then(response => response.json())
-      .then(data => {
-        for (const element of form.elements) {
-          // TODO research disableds: console.log(element, element.dataset)
-          element.removeAttribute('disabled')
-        }
-        if (data.error) {
-          console.error('submit error:', data.error)
-          ui.notify.error(data.error.message, form)
-        } else {
-          console.debug('after-submit, show section')
-          ui.show(data)
-        }
-        resolve()
-      })
-      .catch(reject)
-  })
+    .then(response => response.json())
+    .then(data => {
+      for (const element of form.elements) {
+        // TODO research disableds: console.log(element, element.dataset)
+        element.removeAttribute('disabled')
+      }
+      if (data.error) {
+        console.error('submit error:', data.error)
+        return ui.notify.error(data.error.message, form)
+      }
+      console.debug('after-submit, show section')
+      ui.show(data)
+      resolve()
+    })
+    .catch(reject)
+  )
 }
+
+ui.display = (location) => ui.load(location, (resolve, reject) => {
+  console.debug('display', location)
+  ui
+    .request(location)
+    .then(response => response.json())
+    .then(section => ui.show(section))
+    .then(resolve)
+    .catch(reject)
+})
 
 // CSS class to flag current sections/links
 const _cssnav = 'selected'
 
 ui.show = (section) => {
-  console.info(`show ${section.path} (#${section.id})`)
+  console.info(`show #${section.id} (${section.path})`)
   // FIRST: remove _cssnav class for any link or section within the page
   Array.from(ui.links).forEach(a => a.classList.remove(_cssnav))
   Array.from(ui.sections).forEach(section => section.classList.remove(_cssnav))
@@ -191,30 +232,6 @@ ui.show = (section) => {
   window.history.pushState(section, '', section.data.url || section.path)
   $.classList.add(_cssnav)
   return section
-}
-
-ui.display = (location) => {
-  // console.log('display', location)
-  return ui.load(location, (resolve, reject) => ui
-    .request(location)
-    // TODO if status != 200
-    .then(response => response.json())
-    .then(section => ui.show(section))
-    .then(resolve)
-    .catch(error => {
-      if (!(error instanceof Error)) {
-        console.error(error)
-        return reject(new Error('catched a promise rejection with non-error'))
-      }
-      console.error(error)
-      if (error instanceof SyntaxError) {
-        ui.notify.error('Response produces SyntaxError')
-      } else {
-        ui.notify.error(`Response produces ${error.constructor.name}`)
-      }
-      reject(error)
-    })
-  )
 }
 
 ui.navigate = (event) => {
@@ -244,29 +261,7 @@ ui.navigate = (event) => {
         .reduce((a, b) => a.concat(Array.from(b)), [])
         .forEach(a => a.classList.add(_cssnav))
     })
-    .catch(err => console.error(err))
 }
-
-ui.get = (...args) => new Promise((resolve, reject) => {
-  $.get.apply($, args)
-    .done(resolve)
-    .fail(jxhr => {
-      console[jxhr.status > 499 ? 'error' : 'warn'](
-        'GET', args, jxhr.status, jxhr.statusText
-      )
-      if (jxhr.status < 400) {
-        try {
-          JSON.parse(jxhr.responseText)
-        } catch (error) {
-          assert(error instanceof SyntaxError)
-          console.debug(jxhr.responseText)
-          reject(error) // SyntaxError at received JSON data
-        }
-      } else {
-        reject(jxhr.responseText)
-      }
-    })
-})
 
 ui.plugins = (plugins) => {
   return Promise.all(
@@ -322,8 +317,9 @@ ui.assets = (url) => {
 }
 
 Object.defineProperty(ui, '_loaded', { value: {} })
-ui.isLoading = () => Object.values(ui._loaded).some(value => value !== true)
+ui.isLoading = () => Object.values(ui._loaded).some(value => value === false)
 ui.hasLoaded = (url) => ui._loaded[url] === true
+ui.hasFailed = (url) => ui._loaded[url] && typeof ui._loaded[url] !== 'boolean'
 ui.load = (url, task) => {
   if (ui.hasLoaded(url)) {
     console.debug('already loaded %s (will reload anyway)', url)
@@ -340,26 +336,29 @@ ui.load = (url, task) => {
     return Promise.reject(e)
   }
   return new Promise((resolve, reject) => {
-    try {
-      ui._loaded[url] = false
-      $(ui.body).addClass('loading')
-      task(() => {
-        ui._loaded[url] = true
-        const still = ui.isLoading() ? 'still' : 'done'
-        console.debug(`resource ${url} loaded (${still} loading resources)`)
-        !ui.isLoading() && ui.body.classList.remove('loading')
-        resolve(ui)
-      }, (error) => {
-        const e = new Error(`resource ${url} failed to load`)
-        e.code = 'EWUI_LOAD_FAILURE'
-        e.real = error
-        ui._loaded[url] = e
-        $(ui.body).removeClass('loading')
-        reject(e)
-      })
-    } catch (e) {
+    ui._loaded[url] = false
+    !ui.isLoading() && $(ui.body).addClass('loading')
+
+    const finish = (err, value = ui) => {
+      if (ui._loaded[url] !== false) {
+        return reject(new Error('finish callback called twice'))
+      }
+      ui._loaded[url] = err || true
+
+      const motto = err ? 'Failed load of' : 'Loaded'
+      const still = ui.isLoading() ? 'still' : 'done'
+      console.debug(`${motto} ${url}, ${still} loading resources`)
+
+      !ui.isLoading() && ui.body.classList.remove('loading')
+
+      if (!err) return resolve(value)
+
+      const e = new Error(`resource ${url} failed to load`)
+      e.code = 'EWUI_LOAD_FAILURE'
+      e.real = err
       reject(e)
     }
+    setImmediate(task, () => finish(null), (e) => finish(e))
   })
 }
 
@@ -406,6 +405,29 @@ ui.deploy = (thing, container = ui.body) => {
     new TypeError(`can't deploy ${thing} as it has an invalid type`)
   )
 }
+
+// Legacy
+
+ui.get = (...args) => new Promise((resolve, reject) => {
+  $.get.apply($, args)
+    .done(resolve)
+    .fail(jxhr => {
+      console[jxhr.status > 499 ? 'error' : 'warn'](
+        'GET', args, jxhr.status, jxhr.statusText
+      )
+      if (jxhr.status < 400) {
+        try {
+          JSON.parse(jxhr.responseText)
+        } catch (error) {
+          assert(error instanceof SyntaxError)
+          console.debug(jxhr.responseText)
+          reject(error) // SyntaxError at received JSON data
+        }
+      } else {
+        reject(jxhr.responseText)
+      }
+    })
+})
 
 /* vim: set expandtab: */
 /* vim: set filetype=javascript ts=2 shiftwidth=2: */
