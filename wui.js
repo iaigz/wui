@@ -136,26 +136,30 @@ ui.submit = (form) => {
     if (!field) continue
     data[field] = element.value
   }
-  ui.request(form.action, {
-    method: form.method,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  })
-    // TODO if status != 200
-    .then(response => response.json())
-    .then(data => {
-      for (const element of form.elements) {
-        // TODO research disableds: console.log(element, element.dataset)
-        element.removeAttribute('disabled')
-      }
-      if (data.error) {
-        console.error('submit error:', data.error)
-        ui.notify.error(data.error.message, form)
-      } else {
-        console.debug('after-submit, show section')
-        return ui.show(data)
-      }
+  ui.load(`${form.method} ${form.action}`, (resolve, reject) => {
+    ui.request(form.action, {
+      method: form.method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
     })
+      // TODO if status != 200
+      .then(response => response.json())
+      .then(data => {
+        for (const element of form.elements) {
+          // TODO research disableds: console.log(element, element.dataset)
+          element.removeAttribute('disabled')
+        }
+        if (data.error) {
+          console.error('submit error:', data.error)
+          ui.notify.error(data.error.message, form)
+        } else {
+          console.debug('after-submit, show section')
+          ui.show(data)
+        }
+        resolve()
+      })
+      .catch(reject)
+  })
 }
 
 // CSS class to flag current sections/links
