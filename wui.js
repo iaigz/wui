@@ -172,6 +172,11 @@ ui.show = (section) => {
   Array.from(ui.sections).forEach(section => section.classList.remove(_cssnav))
 
   let $ = ui.$doc.getElementById(section.id)
+  if ($ !== null) {
+    console.info('refresh section DOM')
+    $.remove()
+    $ = null
+  }
   if ($ === null) {
     $ = ui.$doc.createElement('section')
     $.id = section.id
