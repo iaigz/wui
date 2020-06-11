@@ -136,7 +136,7 @@ ui.request = (url, opts = {}) => {
   return ui.fetch(new Request(url, {
     ...opts,
     headers: new Headers({ Accept: 'application/json', ...opts.headers })
-  })).then(res => res.ok ? res : ui.HttpError(res))
+  })).then(res => res.ok || res.status < 500 ? res : ui.HttpError(res))
 }
 
 ui.HttpError = (res, data) => {
@@ -175,21 +175,26 @@ ui.submit = (form) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     })
-    .then(response => response.json())
-    .then(data => {
+    .then(response => response.json().then(json => [response, json]))
+    .then(([res, json]) => {
       for (const element of form.elements) {
         // TODO research disableds: console.log(element, element.dataset)
         element.removeAttribute('disabled')
       }
-      if (data.error) {
-        console.error('submit error:', data.error)
-        return ui.notify.error(data.error.message, form)
+      if (json.error) {
+        if (res.ok) console.warn('response seems ok but contains error')
+        console.error('submit error:', json.error)
+        return ui.notify.error(json.error.message, form)
       }
-      console.debug('after-submit, show section')
-      ui.show(data)
-      resolve()
+      if (res.ok) {
+        console.debug('after-submit, show section')
+        ui.show(json)
+        return resolve()
+      }
+      reject(ui.HttpError(res, json))
     })
     .catch(reject)
+    .finally(() => { ui._loaded[`${method}+${form.action}`] = true })
   )
 }
 
@@ -351,7 +356,8 @@ ui.load = (url, task) => {
 
       !ui.isLoading() && ui.body.classList.remove('loading')
 
-      if (!err) return resolve(value)
+      if (err === null) return resolve(value)
+      if (err) return reject(err)
 
       const e = new Error(`resource ${url} failed to load`)
       e.code = 'EWUI_LOAD_FAILURE'
