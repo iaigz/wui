@@ -129,16 +129,6 @@ ui.fetch = (...args) => window.fetch(...args)
 // determine log severity for Http status code "$c"
 ui.level = c => c > 499 ? 'error' : c > 399 ? 'warn' : c > 299 ? 'info' : 'log'
 
-/* global Request, Headers */
-ui.request = (url, opts = {}) => {
-  // see https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch
-  opts = { mode: 'same-origin', credentials: 'same-origin', ...opts }
-  return ui.fetch(new Request(url, {
-    ...opts,
-    headers: new Headers({ Accept: 'application/json', ...opts.headers })
-  })).then(res => res.ok || res.status < 500 ? res : ui.HttpError(res))
-}
-
 ui.HttpError = (res, data) => {
   const motto = res.status >= 500 ? 'Server Failure' : 'Request Failure'
   const error = new Error(`HTTP ${res.status} ${motto}: ${res.statusText}`)
@@ -154,6 +144,20 @@ ui.HttpError = (res, data) => {
   //  .then(data => {
 }
 
+/* global Request, Headers */
+ui.request = (url, opts = {}) => {
+  // see https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch
+  return ui.fetch(new Request(url, {
+    mode: 'same-origin',
+    credentials: 'same-origin',
+    // cache: 'reload',
+    ...opts,
+    headers: new Headers({ Accept: 'application/json', ...opts.headers })
+  }))
+    .then(res => res.ok || res.status < 400 ? res : ui.HttpError(res))
+}
+
+/* global window, alert */
 ui.submit = (form) => {
   const method = form.dataset.method || form.method
   console.info('Submit %s (%s)', form.id || form.action, method)
@@ -165,53 +169,55 @@ ui.submit = (form) => {
     element.setAttribute('disabled', '')
     // TODO: mark disableds element.dataset.wui = 'disabled-for-submit'
     const field = element.name || element.id
-    if (!field) continue
+    if (!field) { continue }
     data[field] = element.value
   }
 
-  return ui.load(`${method}+${form.action}`, (resolve, reject) => ui
-    .request(form.action, {
+  return ui.load(`${method}+${form.action}`, (resolve, reject) => {
+    return ui.request(form.action, {
+      cache: 'reload',
       method: method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     })
-    .then(response => response.json().then(json => [response, json]))
-    .then(([res, json]) => {
-      for (const element of form.elements) {
-        // TODO research disableds: console.log(element, element.dataset)
-        element.removeAttribute('disabled')
-      }
-      if (json.error) {
-        if (res.ok) console.warn('response seems ok but contains error')
-        console.error('submit error:', json.error)
-        return ui.notify.error(json.error.message, form)
-      }
-      if (res.ok) {
+      .then(handle)
+      .then(json => {
+        for (const element of form.elements) {
+          // TODO research disableds: console.log(element, element.dataset)
+          element.removeAttribute('disabled')
+        }
+        if (json.error) {
+          console.error('submit error:', json.error)
+          return ui.notify.error(json.error.message, form)
+        }
         console.debug('after-submit, show section')
         ui.show(json)
-        return resolve()
-      }
-      reject(ui.HttpError(res, json))
-    })
-    .catch(reject)
-    .finally(() => { ui._loaded[`${method}+${form.action}`] = true })
-  )
+        return ui.show(json)
+      })
+      .catch(reject)
+      .finally(() => ui.forgetURL(`${method}+${form.action}`))
+  })
 }
 
 ui.display = (location) => ui.load(location, (resolve, reject) => {
-  console.debug('display', location)
-  ui
+  // console.debug('display', location)
+  return ui
     .request(location)
     .then(response => response.json())
     .then(section => ui.show(section))
     .then(resolve)
     .catch(reject)
+    .finally(() => ui.forgetURL(location))
 })
 
 // CSS class to flag current sections/links
 const _cssnav = 'selected'
 
 ui.show = (section) => {
+  if (!section.data) {
+    console.warn('Non semella unha sección:', section)
+    return section
+  }
   console.info(`show #${section.id} (${section.path})`)
   // FIRST: remove _cssnav class for any link or section within the page
   Array.from(ui.links).forEach(a => a.classList.remove(_cssnav))
@@ -219,7 +225,7 @@ ui.show = (section) => {
 
   let $ = ui.$doc.getElementById(section.id)
   if ($ !== null) {
-    console.info('refresh section DOM')
+    console.debug('refresh section DOM')
     $.remove()
     $ = null
   }
@@ -325,15 +331,12 @@ Object.defineProperty(ui, '_loaded', { value: {} })
 ui.isLoading = () => Object.values(ui._loaded).some(value => value === false)
 ui.hasLoaded = (url) => ui._loaded[url] === true
 ui.hasFailed = (url) => ui._loaded[url] && typeof ui._loaded[url] !== 'boolean'
+ui.forgetURL = (url) => { delete ui._loaded[url] }
 ui.load = (url, task) => {
-  if (ui.hasLoaded(url)) {
-    console.debug('already loaded %s (will reload anyway)', url)
-    delete ui._loaded[url]
-  }
   try {
     assert(ui.$doc instanceof HTMLDocument, 'ui is not initialized')
     if (typeof ui._loaded[url] !== 'undefined') {
-      throw new ReferenceError(`ui._loaded[${url}] already exists`)
+      throw new ReferenceError(`Already loading "${url}"`)
     }
     // TODO assert url is valid url
     assert(typeof task === 'function', `${task} is not a function`)
@@ -342,7 +345,7 @@ ui.load = (url, task) => {
   }
   return new Promise((resolve, reject) => {
     ui._loaded[url] = false
-    !ui.isLoading() && $(ui.body).addClass('loading')
+    !ui.isLoading() && ui.body.addClass.remove('loading')
 
     const finish = (err, value = ui) => {
       if (ui._loaded[url] !== false) {
@@ -410,6 +413,33 @@ ui.deploy = (thing, container = ui.body) => {
   return Promise.reject(
     new TypeError(`can't deploy ${thing} as it has an invalid type`)
   )
+}
+
+function handle (response) {
+  if (!response.ok) {
+    console.warn('response seems not ok')
+    return console.error(response)
+  }
+  const head = {
+    host: response.headers.get('host'),
+    follow: response.headers.get('location'),
+    messages: response.headers.get('X-WUI-Messages')
+  }
+  switch (response.status) {
+    case 201:
+      ui.notify.info(`Created, will follow to ${head.follow}`)
+      setTimeout(() => { window.location = head.follow }, 2000)
+      break
+    case 200:
+      ui.notify.info('Response Ok, will refresh WUI')
+      window.location = window.location
+      break
+    default:
+      alert(`No actions specified for status code ${response.status}`)
+      break
+  }
+  console.log('response info is', head)
+  return response.json()
 }
 
 // Legacy
