@@ -5,6 +5,7 @@ const pkg = require('./package.json')
 const resource = (_path) => path.resolve('/node_modules', pkg.name, _path)
 
 const $ = require('jquery')
+const { EventEmitter } = require('events')
 
 const HtmlView = require('./AbstractView')
 const Notifier = require('./Notifier')
@@ -89,7 +90,7 @@ ui.bootstrap = (document) => {
             ui.submit(event.target)
           }
           console.info('window event handlers bound')
-          return ui
+          return ui.captureLinks()
         })
         .then(resolve).catch(reject)
     })
@@ -117,6 +118,7 @@ ui.fail = (error) => {
       ui.notify[ui.level(error.statusCode)](error.message)
       console.log(error)
       break
+      // TODO /^NetworkError/ (instanceof TypeError)
     default:
       ui.notify.error(`Unhandled rejection: ${error.message} (${error.code})`)
       console.error(error)
@@ -144,8 +146,14 @@ ui.HttpError = (res, data) => {
   //  .then(data => {
 }
 
+Object.defineProperty(ui, '_emitter', { value: new EventEmitter() })
+ui.on = (...args) => {
+  ui._emitter.on(...args)
+  return ui
+}
+
 /* global Request, Headers */
-ui.request = (url, opts = {}) => {
+ui.request = (url, opts = {}, context = null) => {
   // see https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch
   return ui.fetch(new Request(url, {
     mode: 'same-origin',
@@ -154,10 +162,20 @@ ui.request = (url, opts = {}) => {
     ...opts,
     headers: new Headers({ Accept: 'application/json', ...opts.headers })
   }))
-    .then(res => res.ok || res.status < 400 ? res : ui.HttpError(res))
+    .then(response => {
+      ui._emitter.emit('response', response, {
+        code: response.status,
+        text: response.statusMessage,
+        // host: response.headers.get('host'),
+        follow: response.headers.get('location'),
+        // messages: response.headers.get('X-WUI-Messages'),
+        ...context
+      })
+      return ui
+    })
 }
 
-/* global window, alert */
+/* global window */
 ui.submit = (form) => {
   const method = form.dataset.method || form.method
   console.info('Submit %s (%s)', form.id || form.action, method)
@@ -179,23 +197,16 @@ ui.submit = (form) => {
       method: method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
-    })
-      .then(handle)
-      .then(json => {
+    }, { form })
+      .then(resolve)
+      .catch(reject)
+      .finally(() => {
         for (const element of form.elements) {
           // TODO research disableds: console.log(element, element.dataset)
           element.removeAttribute('disabled')
         }
-        if (json.error) {
-          console.error('submit error:', json.error)
-          return ui.notify.error(json.error.message, form)
-        }
-        console.debug('after-submit, show section')
-        ui.show(json)
-        return ui.show(json)
+        ui.forgetURL(`${method}+${form.action}`)
       })
-      .catch(reject)
-      .finally(() => ui.forgetURL(`${method}+${form.action}`))
   })
 }
 
@@ -203,8 +214,8 @@ ui.display = (location) => ui.load(location, (resolve, reject) => {
   // console.debug('display', location)
   return ui
     .request(location)
-    .then(response => response.json())
-    .then(section => ui.show(section))
+    // .then(response => response.json())
+    // .then(section => ui.show(section))
     .then(resolve)
     .catch(reject)
     .finally(() => ui.forgetURL(location))
@@ -215,7 +226,7 @@ const _cssnav = 'selected'
 
 ui.show = (section) => {
   if (!section.data) {
-    console.warn('Non semella unha sección:', section)
+    console.warn('Missing section.data:', section)
     return section
   }
   console.info(`show #${section.id} (${section.path})`)
@@ -236,13 +247,18 @@ ui.show = (section) => {
     ui.deploy($, ui.main)
   }
 
-  const links = Array.from(ui.links).filter(l => l.onclick === null)
-  links.forEach(link => { link.onclick = ui.navigate })
-  links.length && console.info('navigate bound for %s links', links.length)
+  ui.captureLinks()
 
   window.history.pushState(section, '', section.data.url || section.path)
   $.classList.add(_cssnav)
   return section
+}
+
+ui.captureLinks = () => {
+  const links = Array.from(ui.links).filter(l => l.onclick === null)
+  links.forEach(link => { link.onclick = ui.navigate })
+  links.length && console.info('navigate bound for %s links', links.length)
+  return ui
 }
 
 ui.navigate = (event) => {
@@ -413,33 +429,6 @@ ui.deploy = (thing, container = ui.body) => {
   return Promise.reject(
     new TypeError(`can't deploy ${thing} as it has an invalid type`)
   )
-}
-
-function handle (response) {
-  if (!response.ok) {
-    console.warn('response seems not ok')
-    return console.error(response)
-  }
-  const head = {
-    host: response.headers.get('host'),
-    follow: response.headers.get('location'),
-    messages: response.headers.get('X-WUI-Messages')
-  }
-  switch (response.status) {
-    case 201:
-      ui.notify.info(`Created, will follow to ${head.follow}`)
-      setTimeout(() => { window.location = head.follow }, 2000)
-      break
-    case 200:
-      ui.notify.info('Response Ok, will refresh WUI')
-      window.location = window.location
-      break
-    default:
-      alert(`No actions specified for status code ${response.status}`)
-      break
-  }
-  console.log('response info is', head)
-  return response.json()
 }
 
 // Legacy
