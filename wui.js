@@ -188,6 +188,10 @@ ui.submit = (form) => {
     // TODO: mark disableds element.dataset.wui = 'disabled-for-submit'
     const field = element.name || element.id
     if (!field) { continue }
+    if (element.type === 'checkbox') {
+      if (element.checked) data[field] = true
+      continue
+    }
     data[field] = element.value
   }
 
