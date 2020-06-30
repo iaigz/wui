@@ -87,7 +87,7 @@ ui.bootstrap = (document) => {
           }
           window.onsubmit = (event) => {
             event.preventDefault()
-            ui.submit(event.target)
+            ui.submit(event.target, event.submitter)
           }
           console.info('window event handlers bound')
           return ui.captureLinks()
@@ -176,7 +176,7 @@ ui.request = (url, opts = {}, context = null) => {
 }
 
 /* global window */
-ui.submit = (form) => {
+ui.submit = (form, submitter) => {
   const method = form.dataset.method || form.method
   console.info('Submit %s (%s)', form.id || form.action, method)
 
@@ -191,6 +191,11 @@ ui.submit = (form) => {
     if (element.type === 'checkbox') {
       if (element.checked) data[field] = true
       continue
+    }
+    if (element.type === 'submit') {
+      console.debug(`is ${field} form submitter?`, element === submitter)
+      // omit submits not being the form submitter
+      if (element !== submitter) { continue }
     }
     data[field] = element.value
   }
