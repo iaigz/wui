@@ -20,16 +20,9 @@ body > main {
   flex-flow: column wrap;
   align-items: center;
 }
+/* body > main > section.selected { order: -1; } */
 body > main > section {
-  display: none;
   margin: var(--workarea-top) 6em var(--workarea-bottom) 1.5em;
-}
-body > main > section.loading::before {
-  content: 'loading';
-}
-body > main > section.loading,
-body > main > section.selected {
-  display: block;
 }
 body > main > section {
   font-family: Sans-serif;
@@ -54,37 +47,38 @@ img {
 :root {
   --fadein-duration: 1.5s;
   --fadeout-duration: .8s;
+  --delay: 0s;
+  --spin: rotate 1s linear infinite;
+  --fadein: fadein var(--fadein-duration) ease var(--delay) 1 normal forwards;
+  --fadeout: fadeout var(--fadeout-duration) ease var(--delay) 1 normal forwards;
 }
 @keyframes fadein {
   from { opacity: 0; }
-  to { opacity: 1; display: block; }
+  to { opacity: 1; display: var(--display, block); }
 }
 @keyframes fadeout {
   from { opacity: 1; }
   to { opacity: 0; display: none; }
 }
 @keyframes rotate {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
-body > * {
-  animation: fadein var(--fadein-duration) ease 0s 1 normal forwards;
+body > main > section { animation: var(--fadeout); }
+body > main > section.selected { animation: var(--fadein); }
+/* body.loading > main > section:not(.selected) { display: none; } */
+
+body.loading::after {
+  z-index: 99;
+  transition: z-index var(--fadein-duration) linear;
+  transition-duration: var(--fadein-duration);
+  --delay: 1s;
+  animation: var(--spin), var(--fadein);
 }
-body.loading > * {
-  animation: fadeout var(--fadeout-duration) ease 0s 1 normal forwards;
-}
-body.loading::before {
-  animation: rotate 1s linear infinite
-  , fadein var(--fadein-duration) ease 0s 1 normal forwards
-  ;
-}
-body::before {
+body::after {
   position: fixed;
   top:0; right: 0; bottom: 0; left: 0;
+  z-index: -99;
   margin: auto;
   width: 0;
   height: 0;
@@ -93,9 +87,7 @@ body::before {
   border: 3em solid;
   border-radius: 3em;
   border-color: transparent currentColor;
-  animation: fadeout .8s ease 0s 1 normal forwards
-  , rotate 1s linear infinite
-  ;
+  animation: var(--fadeout), var(--spin);
 }
 /*
  * Look and feel

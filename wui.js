@@ -24,7 +24,7 @@ Object.defineProperty(ui, 'body', { value: null, writable: true })
 
 /* global HTMLDocument */
 
-ui.bootstrap = (document) => {
+ui.bootstrap = (document, assets = []) => {
   if (ui.$doc instanceof HTMLDocument) {
     return Promise.resolve(ui)
   }
@@ -66,15 +66,15 @@ ui.bootstrap = (document) => {
       if (!document.querySelector('meta[rel=manifest]')) {
         console.warn('There is no webmanifest meta tag')
       }
-      ui
-        .assets([
+      Promise.all([
+        ui.assets([
           resource('fluid-typography.css'),
-          resource('wui.css')
-        ])
-        .then(() => ui
-          .plugin('notify', new Notifier(document.createElement('div')))
-        )
-        .then(ui => ui.deploy(ui.notify))
+          resource('wui.css'),
+          ...assets
+        ]),
+        ui.plugin('notify', new Notifier(document.createElement('div')))
+      ])
+        .then(() => ui.deploy(ui.notify))
         .then(() => {
           window.onunhandledrejection = (event) => ui.fail(event.reason)
           window.onbeforeunload = (event) => {
@@ -220,7 +220,13 @@ ui.submit = (form, submitter) => {
 }
 
 ui.display = (location) => ui.load(location, (resolve, reject) => {
-  // console.debug('display', location)
+  console.debug('display', location)
+  /* setImmediate(() => {
+    for (const element of ui.$doc.querySelectorAll(`.${_cssnav}`)) {
+      console.log(element)
+      element.classList.remove(_cssnav)
+    }
+  }) */
   return ui
     .request(location)
     // .then(response => response.json())
@@ -241,25 +247,43 @@ ui.show = (section) => {
   console.info(`show #${section.id} (${section.path})`)
   // FIRST: remove _cssnav class for any link or section within the page
   Array.from(ui.links).forEach(a => a.classList.remove(_cssnav))
-  Array.from(ui.sections).forEach(section => section.classList.remove(_cssnav))
+  Promise.all(
+    Array.from(ui.sections).map(section => new Promise((resolve, reject) => {
+      const to = setTimeout(() => {
+        reject(new Error('Timed out awaiting animation end'))
+      }, 10000)
+      section.onanimationend = () => {
+        clearTimeout(to)
+        section.remove()
+        resolve()
+      }
+      section.classList.remove(_cssnav)
+    }))
+  ).then(() => {
+    let $ = ui.$doc.getElementById(section.id)
+    if ($ !== null) {
+      console.debug('refresh section DOM')
+      ui._emitter.emit('show:refresh', section, $)
+      $.remove()
+      $ = null
+    }
+    if ($ === null) {
+      $ = ui.$doc.createElement('section')
+      $.id = section.id
+      $.classList.add(section.root)
+      $.innerHTML = section.html
+      ui._emitter.emit('show:created', section, $)
+      ui.deploy($, ui.main)
+    }
 
-  let $ = ui.$doc.getElementById(section.id)
-  if ($ !== null) {
-    console.debug('refresh section DOM')
-    $.remove()
-    $ = null
-  }
-  if ($ === null) {
-    $ = ui.$doc.createElement('section')
-    $.id = section.id
-    $.innerHTML = section.html
-    ui.deploy($, ui.main)
-  }
+    ui.captureLinks()
+    window.history.pushState(section, '', section.data.url || section.path)
 
-  ui.captureLinks()
+    $.onanimationend = () => ui._emitter.emit('show', section, $)
+    $.classList.add(_cssnav, 'fx-show')
 
-  window.history.pushState(section, '', section.data.url || section.path)
-  $.classList.add(_cssnav)
+    return section
+  })
   return section
 }
 
@@ -370,7 +394,8 @@ ui.load = (url, task) => {
   }
   return new Promise((resolve, reject) => {
     ui._loaded[url] = false
-    !ui.isLoading() && ui.body.addClass.remove('loading')
+    ui.body.classList.add('loading')
+    ui._emitter.emit('loading', url)
 
     const finish = (err, value = ui) => {
       if (ui._loaded[url] !== false) {
@@ -378,11 +403,15 @@ ui.load = (url, task) => {
       }
       ui._loaded[url] = err || true
 
-      const motto = err ? 'Failed load of' : 'Loaded'
       const still = ui.isLoading() ? 'still' : 'done'
-      console.debug(`${motto} ${url}, ${still} loading resources`)
+      // const motto = err ? 'Failed load of' : 'Loaded'
+      // console.debug(`${motto} ${url}, ${still} loading resources`)
+      if (err) ui._emitter.emit('loading:error', err, url)
+      else ui._emitter.emit(`loading:${still}`, url)
 
-      !ui.isLoading() && ui.body.classList.remove('loading')
+      setTimeout(() => {
+        !ui.isLoading() && ui.body.classList.remove('loading')
+      }, 200)
 
       if (err === null) return resolve(value)
       if (err) return reject(err)
