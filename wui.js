@@ -184,7 +184,8 @@ ui.submit = (form, submitter) => {
 
   const data = {}
   for (const element of form.elements) {
-    element.setAttribute('disabled', '')
+    element.dataset.disabled = element.disabled
+    element.disabled = true
     // TODO: mark disableds element.dataset.wui = 'disabled-for-submit'
     const field = element.name || element.id
     if (!field) { continue }
@@ -212,7 +213,10 @@ ui.submit = (form, submitter) => {
       .finally(() => {
         for (const element of form.elements) {
           // TODO research disableds: console.log(element, element.dataset)
-          element.removeAttribute('disabled')
+          if (!JSON.parse(element.dataset.disabled)) {
+            element.removeAttribute('disabled')
+          }
+          element.removeAttribute('data-disabled')
         }
         ui.forgetURL(`${method}+${form.action}`)
       })
