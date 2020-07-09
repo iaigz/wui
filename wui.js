@@ -281,7 +281,15 @@ ui.show = (section) => {
     }
 
     ui.captureLinks()
-    window.history.pushState(section, '', section.data.url || section.path)
+    const ns = `${section.data.url || section.path}`
+    if (ns) {
+      try {
+        window.history.pushState(section, '', section.data.url || section.path)
+      } catch (err) {
+        console.error(err)
+        ui.notify.warn("Can't push history state")
+      }
+    }
 
     $.onanimationend = () => ui._emitter.emit('show', section, $)
     $.classList.add(_cssnav, 'fx-show')
