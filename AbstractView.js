@@ -1,3 +1,5 @@
+/* global HTMLElement, DocumentFragment */
+
 const $ = require('jquery')
 const assert = require('assert')
 
@@ -11,7 +13,7 @@ function View (element, opts = {}) {
   Object.defineProperty(this, '$', { value: element })
 
   this.styles = opts.styles || []
-  
+
   this
     .addClass(this.constructor.name)
 
@@ -34,16 +36,17 @@ View.prototype.ready = function (ui) {
 }
 View.prototype.render = function (data) {
   // render implies clear content
-  this.$.innerHTML = '' // TODO is there a better way to remove content?
-  //TODO for (let child of this.$.children) this.$.removeChild(child)
-  
+  this.$.innerHTML = ''
+  // TODO is there a better way to remove content?
+  // for (let child of this.$.children) this.$.removeChild(child) mayme?
+
   // no data implies nothing to render
   if (data === null) return this
 
   // string implies render text, not HTML
   // data should be DocumentFragment to insert multiple DOM nodes
-  if ('string' === typeof data) {
-    this.$.insertAdjacentText( 'beforeend', data )
+  if (typeof data === 'string') {
+    this.$.insertAdjacentText('beforeend', data)
   } else if (data instanceof DocumentFragment) {
     this.$.appendChild(data)
   } else if (data instanceof View) {
@@ -60,7 +63,7 @@ View.prototype.createFragment = function () {
 
 // CLASS INTERFACE (Element.classList accessors returning ${this} View)
 // see https://developer.mozilla.org/es/docs/Web/API/Element/classList
-Array('add', 'remove', 'toggle', 'replace').map(function (fn) {
+;['add', 'remove', 'toggle', 'replace'].forEach(function (fn) {
   View.prototype[`${fn}Class`] = function (...args) {
     this.$.classList[fn].apply(this.$.classList, args)
     return this
@@ -74,7 +77,7 @@ Array('add', 'remove', 'toggle', 'replace').map(function (fn) {
 // see https://developer.mozilla.org/en-US/docs/Web/API/Element/insertAdjacentHTML
 View.prototype.append = function (child) {
   assert(child instanceof View, 'child must inherit View')
-  this.$.appendChild( child.$ )
+  this.$.appendChild(child.$)
   return this
 }
 
@@ -90,7 +93,7 @@ View.prototype.tagCollection = function (tagName = '*') {
 }
 View.prototype.classCollection = function (classNames) {
   // developer.mozilla.org/en-US/docs/Web/API/Element/getElementsByClassName
-  return this.$.getElementsByClass(tagName)
+  return this.$.getElementsByClassName(classNames)
 }
 
 Array( // methods returning jQuery
@@ -104,7 +107,7 @@ Array( // methods returning jQuery
 
 Array( // jQuery methods returning ${this} View
   // TODO use vanilla if posible
-	// research Element.attributes
+  // research Element.attributes
   'attr'
 ).map(function (fn) {
   View.prototype[fn] = function (...args) {

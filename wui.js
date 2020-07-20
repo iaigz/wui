@@ -1,4 +1,4 @@
-const assert = require('assert')
+const assert = require('assert').strict
 const path = require('path')
 const pkg = require('./package.json')
 
@@ -90,11 +90,59 @@ ui.bootstrap = (document, assets = []) => {
             ui.submit(event.target, event.submitter)
           }
           console.info('window event handlers bound')
-          return ui.captureLinks()
+          return ui
         })
         .then(resolve).catch(reject)
     })
   })
+}
+
+let _ini = true
+ui.ready = (error = null, $dom = ui.body) => {
+  console.info('WUI becomes ready', _ini ? 'for first time' : 'again')
+  if (error) {
+    $dom.classList.add('ready-error')
+    return Promise.resolve(error)
+  }
+  if (_ini) {
+    // TODO this is dirty
+    setTimeout(() => $dom.classList.add('ready'), 500)
+  }
+
+  // FIRST: remove _cssnav class from links within the DOM
+  const prev = Array.from(ui.links)
+    .filter(link => link.classList.contains(_cssnav))
+  prev.forEach(a => a.classList.remove(_cssnav))
+  prev.length && console.info(
+    'remove _cssnav from %s links', prev.length, { links: prev }
+  )
+  const post = [
+    /* global location */
+    // links pointing to the location pathname
+    ui.$doc.querySelectorAll(`a[href="${location.pathname}"]`),
+    // links pointing to the location URL
+    ui.$doc.querySelectorAll(`a[href="${location}"]`)
+  ]
+    .reduce((a, b) => a.concat(Array.from(b)), [])
+  post.forEach(a => a.classList.add(_cssnav))
+  post.length && console.info(
+    'add _cssnav to %s links', post.length, { links: post }
+  )
+
+  // OLD "ui.captureLinks()"
+  const links = Array.from(ui.links).filter(l => {
+    return l.onclick === null && l.target !== '_self'
+  })
+  links.forEach(link => { link.onclick = ui.navigate })
+  links.length && console.info(
+    'navigate bound for %s links', links.length, { links }
+  )
+
+  setImmediate(() => {
+    ui._emitter.emit('ready', _ini, $dom)
+    if (_ini) _ini = false
+  })
+  return Promise.resolve(null)
 }
 
 /* global EventTarget */
@@ -224,13 +272,7 @@ ui.submit = (form, submitter) => {
 }
 
 ui.display = (location) => ui.load(location, (resolve, reject) => {
-  console.debug('display', location)
-  /* setImmediate(() => {
-    for (const element of ui.$doc.querySelectorAll(`.${_cssnav}`)) {
-      console.log(element)
-      element.classList.remove(_cssnav)
-    }
-  }) */
+  // console.debug('display', location)
   return ui
     .request(location)
     // .then(response => response.json())
@@ -249,12 +291,13 @@ ui.show = (section) => {
     return section
   }
   console.info(`show #${section.id} (${section.path})`)
-  // FIRST: remove _cssnav class for any link or section within the page
-  Array.from(ui.links).forEach(a => a.classList.remove(_cssnav))
-  Promise.all(
-    Array.from(ui.sections).map(section => new Promise((resolve, reject) => {
+  Promise.all(Array.from(ui.sections)
+    .filter(section => section.classList.contains(_cssnav))
+    .map(section => new Promise((resolve, reject) => {
       const to = setTimeout(() => {
-        reject(new Error('Timed out awaiting animation end'))
+        const error = new Error('Timed out awaiting animation end')
+        error.$dom = section
+        reject(error)
       }, 10000)
       section.onanimationend = () => {
         clearTimeout(to)
@@ -280,11 +323,14 @@ ui.show = (section) => {
       ui.deploy($, ui.main)
     }
 
-    ui.captureLinks()
     const ns = `${section.data.url || section.path}`
     if (ns) {
       try {
-        window.history.pushState(section, '', section.data.url || section.path)
+        window.history.pushState({
+          ...section,
+          data: null,
+          html: null
+        }, '', section.data.url || section.path)
       } catch (err) {
         console.error(err)
         ui.notify.warn("Can't push history state")
@@ -292,6 +338,7 @@ ui.show = (section) => {
     }
 
     $.onanimationend = () => ui._emitter.emit('show', section, $)
+    ui.ready(null, $)
     $.classList.add(_cssnav, 'fx-show')
 
     return section
@@ -299,17 +346,10 @@ ui.show = (section) => {
   return section
 }
 
-ui.captureLinks = () => {
-  const links = Array.from(ui.links).filter(l => l.onclick === null)
-  links.forEach(link => { link.onclick = ui.navigate })
-  links.length && console.info('navigate bound for %s links', links.length)
-  return ui
-}
-
 ui.navigate = (event) => {
   const link = event.target
   if (link.tagName !== 'A') {
-    console.error('target:', link)
+    console.error('event target is not <A>', { link })
     throw new TypeError('ui.navigate expect an <A> Node as event target')
   }
 
@@ -321,18 +361,7 @@ ui.navigate = (event) => {
   // taking actions implies not allowing window to unload
   event.preventDefault()
 
-  // link.href will return a complete location (inc. protocol, host, etc)
   ui.display(link.attributes.href.value)
-    .then(() => {
-      [
-        // links with same href attribute value
-        ui.$doc.querySelectorAll(`a[href="${link.attributes.href.value}"]`),
-        // links pointing to the full location
-        ui.$doc.querySelectorAll(`a[href="${link.href}"]`)
-      ]
-        .reduce((a, b) => a.concat(Array.from(b)), [])
-        .forEach(a => a.classList.add(_cssnav))
-    })
 }
 
 ui.plugins = (plugins) => {
@@ -428,7 +457,7 @@ ui.load = (url, task) => {
       if (err === null) return resolve(value)
       if (err) return reject(err)
 
-      const e = new Error(`resource ${url} failed to load`)
+      const e = new Error(`Resource ${url} failed to load`)
       e.code = 'EWUI_LOAD_FAILURE'
       e.real = err
       reject(e)
