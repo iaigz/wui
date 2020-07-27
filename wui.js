@@ -20,6 +20,18 @@ Object.defineProperty(ui, '$doc', { value: null, writable: true })
 Object.defineProperty(ui, 'head', { value: null, writable: true })
 Object.defineProperty(ui, 'body', { value: null, writable: true })
 
+// following flags enable/disable specific debug logging to console
+// they may be enabled through exports.log[flag] = true
+// they are stored privately within this module's closure
+const _log = {}
+'init,load,nav,form'.split(',').forEach(flag => { _log[flag] = false })
+
+Object.defineProperty(ui, 'log', { value: {} })
+Object.defineProperties(ui.log, Object.keys(_log).reduce((obj, key) => ({
+  ...obj,
+  [key]: { get: () => _log[key], set: bool => { _log[key] = !!bool } }
+}), {}))
+
 // TODO backend support. see https://github.com/lukechilds/window
 
 /* global HTMLDocument */
@@ -54,7 +66,7 @@ ui.bootstrap = (document, assets = []) => {
         links: { value: document.getElementsByTagName('a') },
         sections: { value: document.getElementsByTagName('section') }
       })
-      console.info('WUI initialized (DOMContentLoaded)')
+      _log.init && console.info('WUI initialized (DOMContentLoaded)')
       // TODO should only warn here, no injection
       if (!document.querySelector('meta[name=viewport')) {
         console.warn('will inject viewport meta tag')
@@ -82,14 +94,21 @@ ui.bootstrap = (document, assets = []) => {
             console.debug(event)
           }
           window.onpopstate = (event) => {
-            if (event.state === null) return
-            ui.show(event.state)
+            const { state } = event
+            if (state === null) return
+            if (state.id) ui.body.classList.remove(state.id)
+            if (state.root) ui.body.classList.remove(state.root)
+            if (state.data.html) return ui.show(state)
+            if (state.data.url) return ui.display(state.data.url)
+            console.warn('Poped state does not contain html or url', {
+              state, event
+            })
           }
           window.onsubmit = (event) => {
             event.preventDefault()
             ui.submit(event.target, event.submitter)
           }
-          console.info('window event handlers bound')
+          _log.init && console.info('window event handlers bound')
           return ui
         })
         .then(resolve).catch(reject)
@@ -99,7 +118,8 @@ ui.bootstrap = (document, assets = []) => {
 
 let _ini = true
 ui.ready = (error = null, $dom = ui.body) => {
-  console.info('WUI becomes ready', _ini ? 'for first time' : 'again')
+  ((_ini && _log.init) || (!_ini && _log.nav)) &&
+    console.info('WUI becomes ready', _ini ? 'for first time' : 'again')
   if (error) {
     $dom.classList.add('ready-error')
     return Promise.resolve(error)
@@ -113,7 +133,7 @@ ui.ready = (error = null, $dom = ui.body) => {
   const prev = Array.from(ui.links)
     .filter(link => link.classList.contains(_cssnav))
   prev.forEach(a => a.classList.remove(_cssnav))
-  prev.length && console.info(
+  _log.nav && prev.length && console.info(
     'remove _cssnav from %s links', prev.length, { links: prev }
   )
   const post = [
@@ -125,7 +145,7 @@ ui.ready = (error = null, $dom = ui.body) => {
   ]
     .reduce((a, b) => a.concat(Array.from(b)), [])
   post.forEach(a => a.classList.add(_cssnav))
-  post.length && console.info(
+  _log.nav && post.length && console.info(
     'add _cssnav to %s links', post.length, { links: post }
   )
 
@@ -134,7 +154,7 @@ ui.ready = (error = null, $dom = ui.body) => {
     return l.onclick === null && l.target !== '_self'
   })
   links.forEach(link => { link.onclick = ui.navigate })
-  links.length && console.info(
+  _log.nav && links.length && console.info(
     'navigate bound for %s links', links.length, { links }
   )
 
@@ -210,64 +230,88 @@ ui.request = (url, opts = {}, context = null) => {
     ...opts,
     headers: new Headers({ Accept: 'application/json', ...opts.headers })
   }))
-    .then(response => {
-      ui._emitter.emit('response', response, {
+    .then(response => new Promise((resolve, reject) => {
+      const rets = ui._emitter.emit('response', response, {
         code: response.status,
         text: response.statusMessage,
         // host: response.headers.get('host'),
         follow: response.headers.get('location'),
         // messages: response.headers.get('X-WUI-Messages'),
         ...context
+      }, (error = null, fullfill = ui) => {
+        if (error) return reject(error)
+        resolve(fullfill)
       })
-      return ui
-    })
+      if (!rets) console.warn('emited response event returns', rets)
+    }))
 }
 
 /* global window */
+ui.assign = (object, keys, value) => {
+  if (typeof keys === 'string') keys = keys.split('.')
+  return keys.reduce((obj, key, idx) => {
+    if (idx === keys.length - 1) {
+      // console.log('assign', { object, key, value })
+      obj[key] = value
+      return object
+    }
+    if (obj[key] === undefined) {
+      // console.log('create', { object, key })
+      obj[key] = {}
+    }
+    return obj[key]
+  }, object)
+}
 ui.submit = (form, submitter) => {
   const method = form.dataset.method || form.method
-  console.info('Submit %s (%s)', form.id || form.action, method)
+  _log.form && console.info('Submit', form)
 
   if (method === 'GET') return ui.fail(new Error('Cant send a GET form'))
 
   const data = {}
+  _log.form && console.debug('disabling form controls and serializing data...')
   for (const element of form.elements) {
     element.dataset.disabled = element.disabled
     element.disabled = true
-    // TODO: mark disableds element.dataset.wui = 'disabled-for-submit'
+    // TODO: mark disableds as element.dataset.wui = 'disabled-for-submit'
     const field = element.name || element.id
+    const parts = field.split('[').map(key => key === ']'
+      ? '[]'
+      : key[key.length - 1] === ']' ? key.slice(0, -1) : key
+    )
     if (!field) { continue }
     if (element.type === 'checkbox') {
-      if (element.checked) data[field] = true
+      if (element.checked) ui.assign(data, parts, true)
       continue
     }
     if (element.type === 'submit') {
-      console.debug(`is ${field} form submitter?`, element === submitter)
+      _log.form && console.debug(
+        `is ${field} form submitter?`, element === submitter
+      )
       // omit submits not being the form submitter
       if (element !== submitter) { continue }
     }
-    data[field] = element.value
+    ui.assign(data, parts, element.value)
   }
+  _log.form && console.table(data)
 
-  return ui.load(`${method}+${form.action}`, (resolve, reject) => {
-    return ui.request(form.action, {
-      cache: 'reload',
-      method: method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    }, { form })
-      .then(resolve)
-      .catch(reject)
-      .finally(() => {
-        for (const element of form.elements) {
-          // TODO research disableds: console.log(element, element.dataset)
-          if (!JSON.parse(element.dataset.disabled)) {
-            element.removeAttribute('disabled')
-          }
-          element.removeAttribute('data-disabled')
-        }
-        ui.forgetURL(`${method}+${form.action}`)
-      })
+  /* global CustomEvent */
+  form.dispatchEvent(new CustomEvent('submit:before', { detail: { data } }))
+
+  return ui.request(form.action, {
+    cache: 'reload',
+    method: method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  }, { form }).finally(() => {
+    _log.form && console.debug('enabling form controls...')
+    for (const element of form.elements) {
+      // TODO research disableds: console.log(element, element.dataset)
+      if (!JSON.parse(element.dataset.disabled)) {
+        element.removeAttribute('disabled')
+      }
+      element.removeAttribute('data-disabled')
+    }
   })
 }
 
@@ -290,8 +334,8 @@ ui.show = (section) => {
     console.warn('Missing section.data:', section)
     return section
   }
-  console.info(`show #${section.id} (${section.path})`)
-  Promise.all(Array.from(ui.sections)
+  _log.nav && console.info(`show #${section.id} (${section.path})`)
+  return Promise.all(Array.from(ui.sections)
     .filter(section => section.classList.contains(_cssnav))
     .map(section => new Promise((resolve, reject) => {
       const to = setTimeout(() => {
@@ -309,7 +353,7 @@ ui.show = (section) => {
   ).then(() => {
     let $ = ui.$doc.getElementById(section.id)
     if ($ !== null) {
-      console.debug('refresh section DOM')
+      _log.nav && console.debug('recreate section DOM')
       ui._emitter.emit('show:refresh', section, $)
       $.remove()
       $ = null
@@ -328,7 +372,9 @@ ui.show = (section) => {
       try {
         window.history.pushState({
           ...section,
-          data: null,
+          data: {
+            url: section.data.url
+          },
           html: null
         }, '', section.data.url || section.path)
       } catch (err) {
@@ -343,7 +389,7 @@ ui.show = (section) => {
 
     return section
   })
-  return section
+  // return section
 }
 
 ui.navigate = (event) => {
@@ -385,7 +431,7 @@ ui.plugin = (id, view) => {
   }
   view.$.id = id
   Object.defineProperty(ui, id, { value: view, enumerable: true })
-  console.info(`registered ${view} plugin as #${id}`)
+  _log.init && console.info(`registered ${view} plugin as #${id}`)
   return view.styles.length ? ui.assets(view.styles) : Promise.resolve(ui)
 }
 
@@ -436,6 +482,7 @@ ui.load = (url, task) => {
   return new Promise((resolve, reject) => {
     ui._loaded[url] = false
     ui.body.classList.add('loading')
+    _log.load && console.log('loading', url)
     ui._emitter.emit('loading', url)
 
     const finish = (err, value = ui) => {
@@ -445,8 +492,9 @@ ui.load = (url, task) => {
       ui._loaded[url] = err || true
 
       const still = ui.isLoading() ? 'still' : 'done'
-      // const motto = err ? 'Failed load of' : 'Loaded'
-      // console.debug(`${motto} ${url}, ${still} loading resources`)
+      _log.load && console[err ? 'error' : 'log'](`${
+        err ? 'Failed load of' : 'Loaded'
+      } ${url}, ${still} loading resources`)
       if (err) ui._emitter.emit('loading:error', err, url)
       else ui._emitter.emit(`loading:${still}`, url)
 
@@ -462,7 +510,7 @@ ui.load = (url, task) => {
       e.real = err
       reject(e)
     }
-    setImmediate(task, () => finish(null), (e) => finish(e))
+    setImmediate(task, () => finish(null), err => finish(err))
   })
 }
 
