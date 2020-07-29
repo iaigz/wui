@@ -45,11 +45,11 @@ img {
  * Loading overlay
  */
 :root {
-  --fadein-duration: 1.5s;
-  --fadeout-duration: .8s;
+  --fadein-duration: .2s;
+  --fadeout-duration: .2s;
   --delay: 0s;
   --spin: rotate 1s linear infinite;
-  --fadein: fadein var(--fadein-duration) ease var(--delay) 1 normal forwards;
+  --fadein: fadein var(--fadein-duration) ease-in var(--delay) 1 normal forwards;
   --fadeout: fadeout var(--fadeout-duration) ease var(--delay) 1 normal forwards;
 }
 @keyframes fadein {
@@ -68,26 +68,32 @@ body > main > section { animation: var(--fadeout); }
 body > main > section.selected { animation: var(--fadein); }
 /* body.loading > main > section:not(.selected) { display: none; } */
 
-body.loading::after {
-  z-index: 99;
-  transition: z-index var(--fadein-duration) linear;
-  transition-duration: var(--fadein-duration);
-  --delay: 1s;
-  animation: var(--spin), var(--fadein);
-}
-body::after {
+body::before, body::after {
+  content: '';
   position: fixed;
   top:0; right: 0; bottom: 0; left: 0;
-  z-index: -99;
   margin: auto;
-  width: 0;
-  height: 0;
-  content: '';
+  z-index: -1;
+}
+body::before {
+  animation: var(--fadeout);
+  background: #666a;
+}
+body::after {
+  width: 0; height: 0;
   text-align: center;
   border: 3em solid;
   border-radius: 3em;
   border-color: transparent currentColor;
   animation: var(--fadeout), var(--spin);
+}
+body.loading::after {
+  z-index: 99;
+  animation: var(--spin), var(--fadein);
+}
+body.loading::before {
+  z-index: 98;
+  animation: var(--fadein);
 }
 /*
  * Look and feel
