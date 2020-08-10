@@ -90,8 +90,11 @@ ui.bootstrap = (document, assets = []) => {
         .then(() => {
           window.onunhandledrejection = (event) => ui.fail(event.reason)
           window.onbeforeunload = (event) => {
-            console.warn('will unload window')
-            console.debug(event)
+            if (!ui._emitter.listenerCount('beforeunload')) {
+              return console.info('will unload window', { event })
+            }
+            ui._emitter.emit('beforeunload', event)
+            console.info('there are beforeunload listeners', { event })
           }
           window.onpopstate = (event) => {
             const { state } = event
@@ -331,8 +334,8 @@ const _cssnav = 'selected'
 
 ui.show = (section) => {
   if (!section.data) {
-    console.warn('Missing section.data:', section)
-    return section
+    console.trace('Missing section.data:', section)
+    return Promise.resolve(section)
   }
   _log.nav && console.info(`show #${section.id} (${section.path})`)
   return Promise.all(Array.from(ui.sections)
@@ -557,6 +560,16 @@ ui.deploy = (thing, container = ui.body) => {
     new TypeError(`can't deploy ${thing} as it has an invalid type`)
   )
 }
+
+// User interaction dialogs
+ui.confirm = (message) => new Promise((resolve, reject) => {
+  /* global confirm */
+  // TODO don't use browser's confirm builtin
+  if (confirm(message)) {
+    return setImmediate(resolve, true)
+  }
+  setImmediate(resolve, false)
+})
 
 // Legacy
 
