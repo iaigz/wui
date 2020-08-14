@@ -5,26 +5,29 @@
 .NotifyView {
   z-index: 99999999;
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  max-width: 100%;
+  top: var(--workarea-top, 0);
+  left: var(--workarea-left, 0);
+  right: var(--workarea-right, 0);
+  width: auto;
   display: flex;
   flex-flow: row wrap;
+  justify-content: flex-end;
 }
 .NotifyView p.message {
-  flex: 1 0;
+  flex: 1 1 min-content;
   box-sizing: border-box;
-  width: min-content;
+  margin: .4rem;
+  padding: .5em 2.5em;
+
+  text-align: center;
+  font-family: monospace;
+  border-radius: .2em;
+
+  position: relative;
   display: flex;
   flex-flow: row wrap;
   align-items: center;
-  margin: .4rem;
-  padding: .5em 2.5em;
-  border-radius: .2em;
-  text-align: center;
-  font-family: monospace;
-  position: relative;
+  justify-content: center;
 }
 .NotifyView p.message:last-of-type {
 }
@@ -32,21 +35,21 @@
 .NotifyView p.message::after {
   text-align: center;
   position: absolute;
-  width: 1.5rem;
-  line-height: 1.5rem;
+  width: 1.5em;
+  line-height: 1.5em;
   margin: auto 0;
 }
 .NotifyView p.message::before {
   content: 'i';
-  left: .6rem;
-  border-radius: 1.5rem;
+  left: .6em;
+  border-radius: 1.5em;
   font-size: .9em;
 }
 .NotifyView p.message.error::before,
 .NotifyView p.message.warn::before { content: '!'; }
 .NotifyView p.message::after {
   content: 'X';
-  right: .3rem;
+  right: .3em;
 }
 .NotifyView p.message:hover { cursor: pointer; }
 /*
@@ -61,7 +64,7 @@
   --light-info: #dfdffd;
 /* old blue saturado #4db4f6;*/
 
-  --disapear-duration: 1s;
+  --disapear-duration: .5s;
 }
 .NotifyView p.message {
   background: var(--light-info);
@@ -81,11 +84,17 @@
  * Effects
  */
 @keyframes fx-disapear {
-  from { transform: scale(1); color: currentColor; }
-  to { transform: scale(0); color: transparent; }
+  from {
+    transform: scale(1) translate(0, 0) rotate(0);
+    color: currentColor;
+  }
+  to {
+    transform: scale(0) translate(500px, -250px) rotate(360deg);
+  }
 }
 .NotifyView p.fx-disapear {
-  animation: fx-disapear var(--disapear-duration) ease 0s 1 normal both;
+  position: absolute;
+  animation: fx-disapear var(--disapear-duration) ease-in 0s 1 normal both;
 }
 .NotifyView p.message.fx-disapear::after { color: transparent; }
 /* vim: set expandtab: */
