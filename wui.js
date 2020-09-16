@@ -254,17 +254,31 @@ ui.assign = (object, keys, value) => {
   if (typeof keys === 'string') keys = keys.split('.')
   return keys.reduce((obj, key, idx) => {
     if (idx === keys.length - 1) {
-      // console.log('assign', { object, key, value })
+      /* _log.form && console.debug('assign', {
+        obj, key, value,
+        isArrayObj: Array.isArray(obj),
+        isArrayKey: Array.isArray(obj[key])
+      }) // */
       obj[key] = value
       return object
     }
+    /* TODO if (key === '[]') {
+      if (!Array.isArray(obj)) throw new TypeError('Expected an array')
+      if (!obj.length) obj.push({})
+      console.warn('Key is an unknown array index', {
+        obj, next: keys[idx + 1], nextIsLast: idx + 1 === keys.length - 1,
+        heyjoe: obj[obj.length - 1][keys[idx + 1]]
+      })
+      return obj[obj.length - 1]
+    } // */
     if (obj[key] === undefined) {
-      // console.log('create', { object, key })
-      obj[key] = {}
+      obj[key] = keys[idx + 1] === '[]' ? [] : {}
+      // console.debug('created obj[key] = val', { obj, key, val: obj[key] })
     }
     return obj[key]
   }, object)
 }
+
 ui.submit = (form, submitter) => {
   const method = form.dataset.method || form.method
   _log.form && console.info('Submit', form)
@@ -278,25 +292,30 @@ ui.submit = (form, submitter) => {
     element.disabled = true
     // TODO: mark disableds as element.dataset.wui = 'disabled-for-submit'
     const field = element.name || element.id
-    const parts = field.split('[').map(key => key === ']'
-      ? '[]'
-      : key[key.length - 1] === ']' ? key.slice(0, -1) : key
-    )
     if (!field) { continue }
-    if (element.type === 'checkbox') {
+
+    const parts = field.split(/\]\[|\[|\]/g).map((key, idx, arr) => {
+      return key === '' && idx < arr.length - 1 ? '[]' : key
+    })
+    if (parts[0] === '[]') parts.shift()
+    if (parts[parts.length - 1] === '') parts.pop()
+    // _log.form && console.debug({ field, parts })
+
+    const { type, value } = element
+    if (type === 'checkbox') {
       if (element.checked) ui.assign(data, parts, true)
       continue
     }
-    if (element.type === 'submit') {
+    if (type === 'submit') {
       _log.form && console.debug(
         `is ${field} form submitter?`, element === submitter
       )
       // omit submits not being the form submitter
       if (element !== submitter) { continue }
     }
-    ui.assign(data, parts, element.value)
+    ui.assign(data, parts, type === 'number' ? value * 1 : value)
   }
-  _log.form && console.table(data)
+  _log.form && console.log(data)
 
   /* global CustomEvent */
   form.dispatchEvent(new CustomEvent('submit:before', { detail: { data } }))
