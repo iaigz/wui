@@ -262,17 +262,41 @@ ui.assign = (object, keys, value) => {
       obj[key] = value
       return object
     }
-    /* TODO if (key === '[]') {
+
+    const next = keys[idx + 1]
+
+    if (key === '[]') {
       if (!Array.isArray(obj)) throw new TypeError('Expected an array')
-      if (!obj.length) obj.push({})
-      console.warn('Key is an unknown array index', {
-        obj, next: keys[idx + 1], nextIsLast: idx + 1 === keys.length - 1,
-        heyjoe: obj[obj.length - 1][keys[idx + 1]]
+
+      if (!obj.length) {
+        // console.warn('push first object')
+        obj.push({})
+      }
+
+      const left = keys.slice(idx + 1)
+      let item = obj[obj.length - 1]
+
+      if (left.length < 2 && typeof item[next] !== 'undefined') {
+        // console.warn('push new object')
+        obj.push({})
+        item = obj[obj.length - 1]
+      }
+
+      /* TODO this is still experimental
+      console.warn('Array memper generation stillexperimental', {
+        next,
+        item,
+        left,
+        value: item[next],
+        exists: item[next] !== 'undefined',
+        nextIsLast: left.length === 1
       })
-      return obj[obj.length - 1]
-    } // */
+      // */
+      return item
+    }
+
     if (obj[key] === undefined) {
-      obj[key] = keys[idx + 1] === '[]' ? [] : {}
+      obj[key] = next === '[]' ? [] : {}
       // console.debug('created obj[key] = val', { obj, key, val: obj[key] })
     }
     return obj[key]
