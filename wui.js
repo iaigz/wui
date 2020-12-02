@@ -425,7 +425,7 @@ ui.show = (section) => {
         }, '', section.data.url || section.path)
       } catch (err) {
         console.error(err)
-        ui.notify.warn("Can't push history state")
+        // ui.notify.warn("Can't push history state")
       }
     }
 
